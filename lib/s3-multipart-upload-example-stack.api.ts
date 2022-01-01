@@ -1,4 +1,4 @@
-import {CreateMultipartUploadCommand, UploadPartCommand, S3Client} from '@aws-sdk/client-s3'
+import {CreateMultipartUploadCommand, UploadPartCommand, CompleteMultipartUploadCommand, S3Client} from '@aws-sdk/client-s3'
 import {getSignedUrl} from '@aws-sdk/s3-request-presigner'
 import {v4 as uuid} from 'uuid'
 import serverlessExpress from '@vendia/serverless-express'
@@ -75,5 +75,33 @@ app.post<{}, GetSignedUrlResponseType | ErrorResponseType, GetSignedUrlRequestTy
   }
 })
 
-export const handler = serverlessExpress({app})
+type CompleteMultipartUploadRequestType = {
+  key: string
+  uploadId: string
+}
+app.post<{}, ErrorResponseType, CompleteMultipartUploadRequestType>('/completeMultipartUpload', async (req, res) => {
+  const client = createS3Client()
 
+  if (!req.body.key || !req.body.uploadId) {
+    res.send({message: 'missing required params'})
+    res.status(400)
+    return
+  }
+
+  try {
+    const command = new CompleteMultipartUploadCommand({
+      Bucket: bucketName,
+      Key: req.body.key,
+      UploadId: req.body.uploadId
+    })
+    await client.send(command)
+    res.sendStatus(204)
+  } catch (e) {
+    console.error(e)
+    res.send({
+      message: 'Failed to invoke complete multipart upload command'
+    })
+  }
+})
+
+export const handler = serverlessExpress({app})
