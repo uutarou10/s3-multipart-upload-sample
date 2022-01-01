@@ -1,6 +1,6 @@
 import React from 'react';
 
-const API_ENDPOINT = 'https://sm4egbgmx9.execute-api.ap-northeast-1.amazonaws.com/prod/'
+const API_ENDPOINT = 'https://sm4egbgmx9.execute-api.ap-northeast-1.amazonaws.com/prod'
 
 const App = () => {
   const [targetFile, setTargetFile] = React.useState<File | null>(null)
@@ -9,7 +9,6 @@ const App = () => {
     e.preventDefault()
     console.log('submitted', e)
     targetFile && uploadToS3(targetFile)
-    // targetFile && uploadToS3(targetFile).then(() => console.log('finished'))
   }, [targetFile])
 
   const onChangeFile = React.useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
@@ -28,40 +27,49 @@ const App = () => {
 }
 
 const uploadToS3 = async (file: File) => {
-  // const partSize = 1024 * 1024 * 5 // 5MB
-
+  // multipart uploadを開始する
+  // uploadIdを取得する
   const {uploadId, key} = await (await fetch(
     `${API_ENDPOINT}/createMultipartUpload`,
     {method: 'POST'}
   )).json() as {uploadId: string, key: string} // 雑
 
-  const {url: signedUrl} = await (await fetch(
-    `${API_ENDPOINT}/getSignedUrl`,
-    {
-      method: 'POST',
-      body: JSON.stringify({
-        key,
-        uploadId,
-        partNumber: 1 // TODO: 実際はパート数える
-      }),
-      headers: {'Content-Type': 'application/json'}
+  // partごとに分割してアップロード
+  const PART_SIZE = 1024 * 1024 * 5 // 5MB
+  const fileSize = file.size;
+
+  const etags = await Promise.all([...Array(Math.ceil(fileSize / PART_SIZE))].map(async (_, i) => {
+    console.log(`part ${i + 1} start`)
+
+    const sendData = file.slice(i * PART_SIZE, Math.min((i * PART_SIZE) + PART_SIZE, fileSize))
+    const arrayBuffer = await sendData.arrayBuffer()
+
+    const {url: signedUrl} = await (await fetch(
+      `${API_ENDPOINT}/getSignedUrl`,
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          key,
+          uploadId,
+          partNumber: i + 1
+        }),
+        headers: {'Content-Type': 'application/json'}
+      }
+    )).json() as {url: string}
+
+    const uploadResponse = await fetch(signedUrl, {
+      method: 'PUT',
+      body: arrayBuffer
+    })
+
+    const etag = uploadResponse.headers.get('ETag')
+    if (!etag) {
+      console.log(uploadResponse.headers.keys())
+      throw new Error('etag is empty')
     }
-  )).json() as {url: string}
 
-  const uploadResponse = await fetch(signedUrl, {
-    method: 'PUT',
-    body: file
-    // body: new Blob(file)
-  })
-
-  const etag = uploadResponse.headers.get('ETag')
-  if (!etag) {
-    console.log(uploadResponse.headers.keys())
-    throw new Error('etag is empty')
-  }
-
-  console.log(etag)
-
+    return etag
+  }))
 
   await fetch(
     `${API_ENDPOINT}/completeMultipartUpload`,
@@ -70,12 +78,13 @@ const uploadToS3 = async (file: File) => {
       body: JSON.stringify({
         key,
         uploadId,
-        etags: [etag] // 実際は分割したパート順の配列を投げる
+        etags
       }),
       headers: {'Content-Type': 'application/json'}
     }
   )
 
+  alert(`Upload completed!\nkey: ${key}`)
 }
 
 export default App;
