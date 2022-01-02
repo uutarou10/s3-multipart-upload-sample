@@ -38,7 +38,10 @@ const uploadToS3 = async (file: File) => {
   const PART_SIZE = 1024 * 1024 * 5 // 5MB
   const fileSize = file.size;
 
-  const etags = await Promise.all([...Array(Math.ceil(fileSize / PART_SIZE))].map(async (_, i) => {
+  const etags: string[] = []
+  let completedBytes = 0
+  for(const i of [...Array(Math.ceil(fileSize / PART_SIZE))].map((_, i) => i)) {
+
     console.log(`part ${i + 1} start`)
 
     const sendData = file.slice(i * PART_SIZE, Math.min((i * PART_SIZE) + PART_SIZE, fileSize))
@@ -68,8 +71,46 @@ const uploadToS3 = async (file: File) => {
       throw new Error('etag is empty')
     }
 
-    return etag
-  }))
+    etags.push(etag)
+    completedBytes += sendData.size
+
+    console.log(`${completedBytes/fileSize*100}% completed`)
+
+    // return etag
+  }
+
+  // const etags = [...Array(Math.ceil(fileSize / PART_SIZE))].map((_, i) => {
+  //   console.log(`part ${i + 1} start`)
+  //
+  //   const sendData = file.slice(i * PART_SIZE, Math.min((i * PART_SIZE) + PART_SIZE, fileSize))
+  //   const arrayBuffer = await sendData.arrayBuffer()
+  //
+  //   const {url: signedUrl} = await (await fetch(
+  //     `${API_ENDPOINT}/getSignedUrl`,
+  //     {
+  //       method: 'POST',
+  //       body: JSON.stringify({
+  //         key,
+  //         uploadId,
+  //         partNumber: i + 1
+  //       }),
+  //       headers: {'Content-Type': 'application/json'}
+  //     }
+  //   )).json() as {url: string}
+  //
+  //   const uploadResponse = await fetch(signedUrl, {
+  //     method: 'PUT',
+  //     body: arrayBuffer
+  //   })
+  //
+  //   const etag = uploadResponse.headers.get('ETag')
+  //   if (!etag) {
+  //     console.log(uploadResponse.headers.keys())
+  //     throw new Error('etag is empty')
+  //   }
+  //
+  //   return etag
+  // })
 
   await fetch(
     `${API_ENDPOINT}/completeMultipartUpload`,
