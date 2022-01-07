@@ -27,6 +27,7 @@ const App = () => {
 }
 
 const uploadToS3 = async (file: File) => {
+  console.time('upload')
   // multipart uploadを開始する
   // uploadIdを取得する
   const {uploadId, key} = await (await fetch(
@@ -92,6 +93,7 @@ const uploadToS3 = async (file: File) => {
     }
   )
 
+  console.timeEnd('upload')
   alert(`Upload completed!\nkey: ${key}`)
 }
 
